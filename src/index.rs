@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::mem;
-use std::{time::Instant,
-    io::{Write, stdout}};
+use std::{time::{Instant, Duration}, 
+        io::{Write, stdout}};
 use crate::time_aux::saved_duration;
 use crate::type_aux::*;
 
@@ -11,7 +11,8 @@ use crate::type_aux::*;
 //mod super::levenshtein;
 
 pub struct WordIndex {
-    bt: BTreeMap<String, Vec<WordLoc>>
+    bt: BTreeMap<String, Vec<WordLoc>>,
+    pub duration: Duration
 }
 
 pub fn build_index(reader: BufReader<File>) -> WordIndex {
@@ -39,7 +40,7 @@ pub fn build_index(reader: BufReader<File>) -> WordIndex {
     let duration = start.elapsed();
     println!("\nTime elapsed to index the full file with {} lines and {} words. Duration: {:?}", line_count, word_count, duration);
 
-    return WordIndex{bt: word_index}
+    return WordIndex{bt: word_index, duration}
 }
 
 pub fn build_indexes_from_file_name(filename: &str, num_btrees: u32) -> Vec<WordIndex> {
@@ -120,7 +121,8 @@ pub struct Completion {
 #[derive(Debug)]
 pub struct CompletionsRec {
     pub compl: Vec::<Completion>,
-    pub total_count: usize
+    pub total_count: usize,
+    pub duration: Duration
 }
 
 trait NewCompl {
@@ -130,7 +132,8 @@ trait NewCompl {
 impl NewCompl for CompletionsRec {
     fn new(num_compl: usize) -> Self {
         CompletionsRec{ compl: Vec::<Completion>::with_capacity(num_compl),
-            total_count: 0}
+            total_count: 0,
+            duration: Duration::default()}
     }
 }
 
@@ -164,12 +167,13 @@ pub fn find_completions(index: &WordIndex, check_word: &String, num_completions:
     let mut end_range: String = check_word.clone();
     end_range.push_str("zzzzzzzz");
 
-    let start3 = Instant::now();   
-    let completions_rec: CompletionsRec = index.bt
+    let start = Instant::now();   
+    let mut completions_rec: CompletionsRec = index.bt
             .range(check_word.to_owned()..end_range)
             .fold(CompletionsRec::new(num_completions), find_completions_internal).into();
-    let duration3 = start3.elapsed();
-    println!("\nTime elapsed to compute completions is + size: {:?}", duration3);
+    let duration = start.elapsed();
+    completions_rec.duration = duration;
+    println!("\nTime elapsed to compute completions is + size: {:?}", duration);
     println!("\tNew results:\n\t{completions_rec:?}");
 
     completions_rec

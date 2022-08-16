@@ -23,15 +23,17 @@ use crossterm::{queue, QueueableCommand, cursor, execute, terminal,
 mod time_aux;
 mod type_aux;
 
-mod count_only;
 mod index;
 mod levenshtein;
+
+use index::Completion;
 
 
 #[derive(PartialEq)]
 enum InputStatus {
     Quit,
     Changed,
+    ShowResults,
     None
 }
 
@@ -51,6 +53,9 @@ fn search_file_via_console(filename: &str) -> Result<()> {
     {
         let word_index = index::build_index(BufReader::new(File::open(filename).expect("Cannot open file.")));
 
+        queue!(stdout,  cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+        println!("{} [duration {:?}]", "Building the index".magenta(), word_index.duration); 
+
         terminal::enable_raw_mode()?;
 
         let mut search_str = String::default();
@@ -63,11 +68,19 @@ fn search_file_via_console(filename: &str) -> Result<()> {
 
             if status == InputStatus::Changed {
                 let compl_rec = index::find_completions(&word_index, &search_str, 7);
+                queue!(stdout,  cursor::MoveTo(0, 4), terminal::Clear(terminal::ClearType::FromCursorDown));
+                print!("Search for completions completed in {:?}\r\n", compl_rec.duration);
+                
                 if compl_rec.compl.len() > 0 {
                     most_likely_completion = compl_rec.compl[0].completion.clone();
+                    for Completion{completion, count} in compl_rec.compl {
+                        print!("{:5} {}\r\n", count, completion);
+                    }
                 } else {
-                    most_likely_completion = String()::default();
+                    most_likely_completion = String::default();
                 }
+                print!("\r\n");
+                stdout.flush();
             }
         }
         terminal::disable_raw_mode();
@@ -95,13 +108,14 @@ fn get_input(search_str: &mut String, completion: &String) -> crossterm::Result<
     // prints the key-codes in an event-loop. Als catches CTRL-C so use <ESC> to get out.
     let mut stdout = stdout();
 
-    queue!(stdout,  cursor::MoveTo(0, 3), terminal::Clear(terminal::ClearType::CurrentLine));
+    queue!(stdout,  cursor::MoveTo(0, 2), terminal::Clear(terminal::ClearType::CurrentLine));
+    print!("Special commands: Tab=Accept completion, Enter=Search-locations, CTRL-C=quit program\r\n");
     let completion_suffix: String = completion.chars().skip((&search_str).chars().count()).collect();
     let sstr = search_str.clone();
     let len_compl_suffix = completion_suffix.len() as u16;
     //println!("{}{}{}", "SEARCH: ".bold(), search_str.as_ref::<String>().blue(), completion_suffix.grey());
     print!("{}{}{}", "SEARCH: ".bold(), sstr.blue(), completion_suffix.grey());
-    queue!(stdout, terminal::Clear(terminal::ClearType::FromCursorDown), cursor::MoveLeft(len_compl_suffix));
+    queue!(stdout, cursor::MoveLeft(len_compl_suffix));
     stdout.flush();
 
 
@@ -117,6 +131,13 @@ fn get_input(search_str: &mut String, completion: &String) -> crossterm::Result<
             Event::FocusLost => (),
             Event::Key(event) if event == KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(InputStatus::Quit),
             Event::Key(event) if event == KeyCode::Esc.into() =>  return Ok(InputStatus::Quit),
+            Event::Key(event) if event == KeyCode::Tab.into() =>  {
+                search_str.push_str(&completion.chars().skip((&search_str).chars().count()).collect::<String>());
+                return Ok(InputStatus::Changed);
+            },
+            Event::Key(event) if event == KeyCode::Enter.into() =>  {
+                return Ok(InputStatus::ShowResults);
+            },
             Event::Key(event) if event == KeyCode::Backspace.into() => {
                 search_str.pop();
                 return Ok(InputStatus::Changed);
@@ -140,6 +161,7 @@ fn get_input(search_str: &mut String, completion: &String) -> crossterm::Result<
             Event::Paste(data) => println!("Pasting: {}", data),
             Event::Resize(width, height) => ()
         }
+        queue!(stdout, terminal::Clear(terminal::ClearType::FromCursorDown), cursor::MoveLeft(len_compl_suffix));
         stdout.flush();
     }
 
