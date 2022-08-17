@@ -54,12 +54,13 @@ fn search_file_via_console(filename: &str) -> Result<()> {
         let word_index = index::build_index(BufReader::new(File::open(filename).expect("Cannot open file.")));
 
         queue!(stdout,  cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
-        println!("{} [duration {:?}]", "Building the index".magenta(), word_index.duration); 
+        println!("{}", format!("Index containing {} records and {} words in {:?}", word_index.record_count, word_index.word_count, word_index.duration).magenta()); 
 
         terminal::enable_raw_mode()?;
 
         let mut search_str = String::default();
-        let mut most_likely_completion = String::default();    
+        let mut most_likely_completion = String::default();
+        let num_completions = 10;
         loop {
             let status = get_input(&mut search_str, &most_likely_completion)?;
             if status == InputStatus::Quit {
@@ -67,20 +68,37 @@ fn search_file_via_console(filename: &str) -> Result<()> {
             }
 
             if status == InputStatus::Changed {
-                let compl_rec = index::find_completions(&word_index, &search_str, 7);
+                let compl_rec = index::find_completions(&word_index, &search_str, num_completions);
                 queue!(stdout,  cursor::MoveTo(0, 4), terminal::Clear(terminal::ClearType::FromCursorDown));
-                print!("Search for completions completed in {:?}\r\n", compl_rec.duration);
+                print!("{}", format!("Search for completions completed in {:?}\r\n", compl_rec.duration).green());
                 
                 if compl_rec.compl.len() > 0 {
                     most_likely_completion = compl_rec.compl[0].completion.clone();
-                    for Completion{completion, count} in compl_rec.compl {
-                        print!("{:5} {}\r\n", count, completion);
+                    for (idx, Completion{completion, count}) in compl_rec.compl.iter().enumerate() {
+                        print!("{}: completion '{}' occurs  {} times\r\n", idx + 1, completion, count);
                     }
                 } else {
                     most_likely_completion = String::default();
                 }
-                print!("\r\n");
+                print!("\r\n\r\n");
                 stdout.flush();
+
+                {
+                    let num_chars = search_str.chars().count();
+                    if num_chars <= 1 {
+                        print!("{}", "need at least two letter to compute Damerau–Levenshtein distance.\r\n".green());
+                        continue;
+                    }
+                    let max_dist = if num_chars > 3 {2} else {1};
+                    let compl_rec_dl = index::find_dl_completions(&word_index, &search_str, num_completions, max_dist);
+                    print!("{}", format!("Search for Damerau–Levenshtein (max_dist={}) completed in {:?}\r\n", max_dist, compl_rec_dl.duration).green());
+                    if compl_rec_dl.compl.len() > 0 {
+                        for (idx, Completion{completion, count}) in compl_rec_dl.compl.iter().enumerate() {
+                            print!("{}: completion '{}' occurs  {} times\r\n", idx + 1, completion, count);
+                        }
+                    }
+                }
+            
             }
         }
         terminal::disable_raw_mode();

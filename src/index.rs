@@ -12,8 +12,28 @@ use crate::type_aux::*;
 
 pub struct WordIndex {
     bt: BTreeMap<String, Vec<WordLoc>>,
-    pub duration: Duration
+    pub duration: Duration,
+    pub record_count: usize,
+    pub word_count: usize
 }
+
+fn remove_interpunction(s: &str) -> String {
+    // for a word remove heading and trailing interpunction
+    let chs: Vec<char> = s.chars().collect();
+    
+    let mut start_idx = if chs[0] == '"' || chs[0] == '\u{27}' {1} else {0};
+    let end_idx = match chs[chs.len()-1] {
+        ';' | '.' | ',' | '"' | '\u{27}' | '?' | '!' => chs.len() - 1,
+        _ => chs.len()
+    };
+
+    if start_idx >= end_idx {
+        String::default()
+    } else {
+        chs[start_idx..end_idx].iter().collect::<String>()
+    }
+}
+
 
 pub fn build_index(reader: BufReader<File>) -> WordIndex {
     let mut word_index = BTreeMap::new();
@@ -21,26 +41,31 @@ pub fn build_index(reader: BufReader<File>) -> WordIndex {
     let start = Instant::now();   
     //    println!("Dynamic usage of tree is {}", word_count.dynamic_usage());
     // adding all words to the word-count
-    let mut line_count = 0;
+    let mut record_count = 0;
     let mut word_count = 0;
     let mut stdout = stdout();
     for (line_idx, line) in reader.lines().enumerate() {
-        for (word_idx, word) in line.unwrap().split_whitespace().enumerate() {
+        record_count += 1;
+        for (word_idx, word) in line
+                                .unwrap()
+//                                .to_lowercase()
+                                .split_whitespace()
+                                .map(remove_interpunction)
+                                .enumerate() {
             word_count += 1;
             let w_string = word.to_string();
             let WordLoc = WordLoc{line: line_idx as u32, word: word_idx as u16};
             (*word_index.entry(w_string).or_insert(Vec::new())).push(WordLoc);
         }
-        line_count += 1;
-        if line_count % 1000 == 0 {
+        if record_count % 1000 == 0 {
             print!(".");
             stdout.flush();
         }
     }
     let duration = start.elapsed();
-    println!("\nTime elapsed to index the full file with {} lines and {} words. Duration: {:?}", line_count, word_count, duration);
+    println!("\nTime elapsed to index the full file with {} lines and {} words. Duration: {:?}", record_count, word_count, duration);
 
-    return WordIndex{bt: word_index, duration}
+    return WordIndex{bt: word_index, duration, record_count, word_count};
 }
 
 pub fn build_indexes_from_file_name(filename: &str, num_btrees: u32) -> Vec<WordIndex> {
@@ -74,16 +99,16 @@ pub fn test_index(reader: BufReader<File>) {
     let check_word = "the".to_string();
     let cr = find_completions(&word_count, &check_word, 10);
 
-    let start4 = Instant::now();   
-    let check_word = "the".to_string();
-    let end_range = "thf".to_string();
-    let mut cnt = 0i32;
-    let longest_completion = word_count.bt
-            .range(check_word..end_range)
-            .fold(String::new(), |longest, kv| if kv.0.len() > longest.len() {kv.0.clone()} else {longest});
-    let duration4 = start4.elapsed();
-    println!("\nTime elapsed to find longest completion is: {:?}", duration4);
-    println!("\tNew results:\n\t{longest_completion}");
+    // let start4 = Instant::now();   
+    // let check_word = "the".to_string();
+    // let end_range = "thf".to_string();
+    // let mut cnt = 0i32;
+    // let longest_completion = word_count.bt
+    //         .range(check_word..end_range)
+    //         .fold(String::new(), |longest, kv| if kv.0.len() > longest.len() {kv.0.clone()} else {longest});
+    // let duration4 = start4.elapsed();
+    // println!("\nTime elapsed to find longest completion is: {:?}", duration4);
+    // println!("\tNew results:\n\t{longest_completion}");
 
 
     {
@@ -159,6 +184,23 @@ fn find_completions_internal(mut state: CompletionsRec, kv: (&String, &Vec<WordL
         }
     } 
     state
+}
+
+
+pub fn find_dl_completions(index: &WordIndex, check_word: &String, num_completions: usize, max_dist: usize) -> CompletionsRec {
+    // look over full index for words that are within 'max_dist' and order by frequency.
+    use crate::levenshtein::dam_lev_prefix;
+
+    let start = Instant::now();   
+    let mut completions_rec: CompletionsRec =  index.bt
+        .iter()
+        .filter(|&(s, _)| !s.starts_with(check_word)) 
+        .fold(CompletionsRec::new(num_completions), |state, kv| if let Some(_) = dam_lev_prefix(check_word, kv.0, max_dist) {find_completions_internal(state, kv)} else {state});
+    let duration = start.elapsed();
+    completions_rec.duration = duration;
+    println!("Time elapsed {:?}\n", duration);
+
+    completions_rec
 }
 
 
