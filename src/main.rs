@@ -8,7 +8,8 @@ use crate::levenshtein::dam_lev_prefix;
 extern crate crossterm;
 
 
-use crossterm::{queue, QueueableCommand, cursor, execute, terminal, 
+use crossterm::{queue, QueueableCommand, cursor, execute, terminal,
+        cursor::{SavePosition, RestorePosition}, 
             style::Stylize,
             event::{poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers}, 
             Result};
@@ -56,6 +57,7 @@ fn search_file_via_console(filename: &str) -> Result<()> {
         queue!(stdout,  cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
         println!("{}", format!("Index containing {} records and {} words in {:?}", word_index.record_count, word_index.word_count, word_index.duration).magenta()); 
 
+        let mut row: u16 = 0;
         terminal::enable_raw_mode()?;
 
         let mut search_str = String::default();
@@ -63,11 +65,25 @@ fn search_file_via_console(filename: &str) -> Result<()> {
         let num_completions = 10;
         loop {
             let status = get_input(&mut search_str, &most_likely_completion)?;
-            if status == InputStatus::Quit {
-                break;
-            }
 
-            if status == InputStatus::Changed {
+            match status {
+            InputStatus::Quit => break,
+            InputStatus::ShowResults => {
+                queue!(stdout,  cursor::MoveTo(0, row), terminal::Clear(terminal::ClearType::All));
+
+                match word_index.bt.get(&search_str) {
+                    Some(occurrences) => {
+                        print!("\r\nObserved {} instances of '{}'\r\n", &occurrences.len(), &search_str);
+                        for (idx, oc) in occurrences.iter().enumerate() {
+                            print!("{}: {:?}\r\n", idx, oc);
+                        }
+                    },
+                    None => print!("No matches of '{}' found.\r\n", &search_str)
+                };
+                break
+            },
+            InputStatus::None => continue,
+            InputStatus::Changed => {
                 let compl_rec = index::find_completions(&word_index, &search_str, num_completions);
                 queue!(stdout,  cursor::MoveTo(0, 4), terminal::Clear(terminal::ClearType::FromCursorDown));
                 print!("{}", format!("Search for completions completed in {:?}\r\n", compl_rec.duration).green());
@@ -90,16 +106,22 @@ fn search_file_via_console(filename: &str) -> Result<()> {
                         continue;
                     }
                     let max_dist = if num_chars > 3 {2} else {1};
+
+                    execute!(stdout, SavePosition);
                     let compl_rec_dl = index::find_dl_completions(&word_index, &search_str, num_completions, max_dist);
+                    execute!(stdout, cursor::RestorePosition, terminal::Clear(terminal::ClearType::FromCursorDown));
+
                     print!("{}", format!("Search for Damerau–Levenshtein (max_dist={}) completed in {:?}\r\n", max_dist, compl_rec_dl.duration).green());
                     if compl_rec_dl.compl.len() > 0 {
                         for (idx, Completion{completion, count}) in compl_rec_dl.compl.iter().enumerate() {
                             print!("{}: completion '{}' occurs  {} times\r\n", idx + 1, completion, count);
                         }
                     }
+                    print!("\r\n");
                 }
-            
+                (_, row) = cursor::position().unwrap();
             }
+        }
         }
         terminal::disable_raw_mode();
 
