@@ -52,7 +52,7 @@ fn search_file_via_console(filename: &str) -> Result<()> {
     execute!(stdout, EnableMouseCapture)?;
 
     {
-        let word_index = index::build_index(BufReader::new(File::open(filename).expect("Cannot open file.")));
+        let word_index = index::WordIndex::build_index(BufReader::new(File::open(filename).expect("Cannot open file.")));
         let num_completions = 10;
 
         // let res = word_index.bt.get("the").unwrap().len();
@@ -62,7 +62,7 @@ fn search_file_via_console(filename: &str) -> Result<()> {
 
         queue!(stdout,  cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
         println!("{}", format!("Index compressed {} records containing {} words to an index of {} items in {:?}", 
-            word_index.record_count, word_index.word_count, word_index.bt.len(), word_index.duration).magenta()); 
+            word_index.record_count, word_index.word_count, word_index.len(), word_index.duration).magenta()); 
 
         let mut row: u16 = 0;
         terminal::enable_raw_mode()?;
@@ -79,7 +79,7 @@ fn search_file_via_console(filename: &str) -> Result<()> {
                 // queue!(stdout, cursor::MoveTo(0, row), terminal::Clear(terminal::ClearType::All), cursor::MoveTo(0, row));
                 print!("{}", format!("Locations of the word '{}':\r\n", &search_str).magenta());
 
-                match word_index.bt.get(&search_str) {
+                match word_index.find_matches(&search_str) {
                     Some(occurrences) => {
                         print!("\r\nObserved {} instances of '{}'\r\n", &occurrences.len(), &search_str);
                         for (idx, oc) in occurrences.iter().enumerate() {
@@ -92,7 +92,7 @@ fn search_file_via_console(filename: &str) -> Result<()> {
             },
             InputStatus::None => continue,
             InputStatus::Changed => {
-                let compl_rec = index::find_completions(&word_index, &search_str, num_completions);
+                let compl_rec = word_index.find_completions(&search_str, num_completions);
                 queue!(stdout,  cursor::MoveTo(0, 4), terminal::Clear(terminal::ClearType::FromCursorDown));
                 print!("{}", format!("Search for completions completed in {:?}\r\n", compl_rec.duration).green());
                 
@@ -116,7 +116,7 @@ fn search_file_via_console(filename: &str) -> Result<()> {
                     let max_dist = if num_chars > 3 {2} else {1};
 
                     execute!(stdout, SavePosition);
-                    let compl_rec_dl = index::find_dl_completions(&word_index, &search_str, num_completions, max_dist);
+                    let compl_rec_dl = word_index.find_dl_completions(&search_str, num_completions, max_dist);
                     execute!(stdout, cursor::RestorePosition, terminal::Clear(terminal::ClearType::FromCursorDown));
 
                     print!("{}", format!("Search for Damerau–Levenshtein (max_dist={}) completed in {:?}\r\n", max_dist, compl_rec_dl.duration).green());
