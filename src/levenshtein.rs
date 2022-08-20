@@ -10,17 +10,14 @@ pub fn dam_lev_prefix(prefix_str: &str, word_str: &str, max_dist: usize) -> Opti
     // Compute the Damerau-Levenshtein for a prefix up to a maximum. The return value is 0 if the strings are equal, otherwise it is the actual distance or None.
     // The None value signals the distance exceeds the 'max_dist'.
     //println!("\nHandling {prefix_str}  for  word {word_str}.");
-    let mut dist = match prefix_str.len() as i32 - word_str.len() as i32 {
-                    prefix_excess_len if prefix_excess_len > max_dist as i32 => return None,
-                    prefix_excess_len if prefix_excess_len > 0  => prefix_excess_len as usize,
-                    _ => 0 };
-    
     let prefix: Vec<char> = prefix_str.chars().collect();
     let word = word_str.chars().collect::<Vec<char>>(); 
     
+    let mut dist = 0;
+
     let mut skip_char = false;
-    let mut num_deletions = 0;
-    for idx in 0..cmp::min(prefix.len(), word.len() - num_deletions) {
+    let mut word_offset: isize = 0; // When positive a character from word is deleted when negative a character from prefix is deleted
+    for idx in 0..prefix.len() {
         if dist > max_dist {
             return None;
         }
@@ -29,25 +26,36 @@ pub fn dam_lev_prefix(prefix_str: &str, word_str: &str, max_dist: usize) -> Opti
             skip_char = false;
             continue;
         }
-        if prefix[idx] != word[idx - num_deletions] {
-            //println!("Mismatch at position {} of {word:?} with current dist of {dist}", idx - num_deletions);
-            let check_pos = idx - num_deletions + 1;
-            if word.len() > check_pos  && prefix[idx] == word[check_pos] {
-                // consider deletion or transpose
-                //println!("Consider deletion or transpose on position {check_pos} in word {word:?}");
-                if prefix.len() > idx+1 &&  prefix[idx + 1] == word[idx - num_deletions] {
-                    // transpose possible
-                    //println!{"Confirmed TRANSPOSE"};
-                    skip_char = true;
-                } else {
-                    //println!{"Confirmed DELETE"};
-                    // perform a deletion
-                }
-            } else {
-                // perform a replace
-                //println!("Replace at the position {} of {word:?}", idx - num_deletions);
-            }
+        let word_idx = (idx as isize + word_offset) as usize;
+        if word_idx >= word.len() {
+            dist += 1;
+            continue;
+        }
+        if prefix[idx] != word[word_idx] {
             dist += 1;            
+
+            let check_word_idx = word_idx + 1;            
+            if word.len() > check_word_idx  && prefix[idx] == word[check_word_idx] {
+                // consider deletion in word, a transpose.
+                if  prefix.len() > idx+1 && prefix[idx + 1] == word[word_idx] {
+                    // transpose possible and solves issue in current and next index, so skip next index to prevent double-counting
+                    skip_char = true;
+                    } else {
+                        // drop a character from prefix
+                        word_offset += 1 
+                    } 
+                } else {
+                    // consider a drop of a character from prefix or a replace
+                    if prefix.len() > idx+1 &&  prefix[idx + 1] == word[word_idx] {
+                        //drop a character from prefix
+                        word_offset -= 1;
+                        skip_char = true;  //next iteration will success anyway (but this is not necessary)
+                    }
+                    else {
+                        // assume a replace
+                    }
+
+                }
         }
     }
     
@@ -68,6 +76,8 @@ mod tests {
     fn test_dam_lev_prefix() {
         // equal strings
         assert_eq!(dam_lev_prefix("abc", "abc", 2), Some(0));
+        assert_eq!(dam_lev_prefix("abc", "acdef", 2), Some(1)); // one deletion is better than two replaces
+        assert_eq!(dam_lev_prefix("abc", "acdef", 2), Some(1)); // one deletion is better than two replaces
         // prefix is longer than word
         assert_eq!(dam_lev_prefix("abcX", "abc", 2), Some(1));
         assert_eq!(dam_lev_prefix("abcXY", "abc", 2), Some(2));
