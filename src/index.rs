@@ -21,9 +21,9 @@ fn remove_interpunction(s: &str) -> String {
     // for a word remove heading and trailing interpunction
     let chs: Vec<char> = s.chars().collect();
     
-    let mut start_idx = if chs[0] == '"' || chs[0] == '\u{27}' {1} else {0};
+    let mut start_idx = if chs[0] == '"' || chs[0] == '\u{27}' || chs[0] == '[' || chs[0] == '(' || chs[0] == '{' {1} else {0};
     let end_idx = match chs[chs.len()-1] {
-        ';' | '.' | ',' | '"' | '\u{27}' | '?' | '!' => chs.len() - 1,
+        ';' | '.' | ',' | '"' | '\u{27}' | '?' | '!' | ')' | ']' | '}'=> chs.len() - 1,
         _ => chs.len()
     };
 
@@ -173,10 +173,11 @@ pub fn find_completions(index: &WordIndex, check_word: &String, num_completions:
 #[cfg(test)]
 mod tests {
     use super::{find_completions_internal, WordLoc, CompletionsRec};
+    use std::time::Duration;
 
     #[test]
     fn test_find_completions() {
-        let state = CompletionsRec{ compl: Vec::<super::Completion>::with_capacity(2), total_count: 0};
+        let state = CompletionsRec{ compl: Vec::<super::Completion>::with_capacity(2), total_count: 0, duration: Duration::default()};
 
         // add the first item to 'state'
         let state = find_completions_internal(state, (&"initial-value".to_string(), &(vec!(WordLoc{line: 1, word: 1}, WordLoc{line: 2, word: 2}, WordLoc{line: 3, word: 3}))));

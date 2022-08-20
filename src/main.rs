@@ -53,23 +53,31 @@ fn search_file_via_console(filename: &str) -> Result<()> {
 
     {
         let word_index = index::build_index(BufReader::new(File::open(filename).expect("Cannot open file.")));
+        let num_completions = 10;
+
+        // let res = word_index.bt.get("the").unwrap().len();
+        // println!("The word 'the' has {} occurences", res);
+
+        // return Ok(());
 
         queue!(stdout,  cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
-        println!("{}", format!("Index containing {} records and {} words in {:?}", word_index.record_count, word_index.word_count, word_index.duration).magenta()); 
+        println!("{}", format!("Index compressed {} records containing {} words to an index of {} items in {:?}", 
+            word_index.record_count, word_index.word_count, word_index.bt.len(), word_index.duration).magenta()); 
 
         let mut row: u16 = 0;
         terminal::enable_raw_mode()?;
 
         let mut search_str = String::default();
         let mut most_likely_completion = String::default();
-        let num_completions = 10;
         loop {
             let status = get_input(&mut search_str, &most_likely_completion)?;
 
             match status {
             InputStatus::Quit => break,
             InputStatus::ShowResults => {
-                queue!(stdout,  cursor::MoveTo(0, row), terminal::Clear(terminal::ClearType::All));
+                queue!(stdout, cursor::MoveTo(0, row));
+                // queue!(stdout, cursor::MoveTo(0, row), terminal::Clear(terminal::ClearType::All), cursor::MoveTo(0, row));
+                print!("{}", format!("Locations of the word '{}':\r\n", &search_str).magenta());
 
                 match word_index.bt.get(&search_str) {
                     Some(occurrences) => {
@@ -97,7 +105,7 @@ fn search_file_via_console(filename: &str) -> Result<()> {
                     most_likely_completion = String::default();
                 }
                 print!("\r\n\r\n");
-                stdout.flush();
+                stdout.flush().unwrap();
 
                 {
                     let num_chars = search_str.chars().count();
@@ -156,7 +164,7 @@ fn get_input(search_str: &mut String, completion: &String) -> crossterm::Result<
     //println!("{}{}{}", "SEARCH: ".bold(), search_str.as_ref::<String>().blue(), completion_suffix.grey());
     print!("{}{}{}", "SEARCH: ".bold(), sstr.blue(), completion_suffix.grey());
     queue!(stdout, cursor::MoveLeft(len_compl_suffix));
-    stdout.flush();
+    stdout.flush().unwrap();
 
 
     if poll(Duration::from_millis(500))? {
@@ -201,8 +209,8 @@ fn get_input(search_str: &mut String, completion: &String) -> crossterm::Result<
             Event::Paste(data) => println!("Pasting: {}", data),
             Event::Resize(width, height) => ()
         }
-        queue!(stdout, terminal::Clear(terminal::ClearType::FromCursorDown), cursor::MoveLeft(len_compl_suffix));
-        stdout.flush();
+        queue!(stdout, terminal::Clear(terminal::ClearType::FromCursorDown), cursor::MoveLeft(len_compl_suffix)).unwrap();
+        stdout.flush().unwrap();
     }
 
     return Ok(InputStatus::None);

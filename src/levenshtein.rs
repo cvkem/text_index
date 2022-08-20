@@ -9,7 +9,8 @@ use std::cmp;
 pub fn dam_lev_prefix(prefix_str: &str, word_str: &str, max_dist: usize) -> Option<usize> {
     // Compute the Damerau-Levenshtein for a prefix up to a maximum. The return value is 0 if the strings are equal, otherwise it is the actual distance or None.
     // The None value signals the distance exceeds the 'max_dist'.
-    //println!("\nHandling {prefix_str}  for  word {word_str}.");
+    //
+    // Note: this version does not do full backtracking, so it might miss out on complex patterns. We should make a recursive version with full back-tracking.
     let prefix: Vec<char> = prefix_str.chars().collect();
     let word = word_str.chars().collect::<Vec<char>>(); 
     
