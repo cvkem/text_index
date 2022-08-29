@@ -132,7 +132,7 @@ fn search_file_via_console(filename: &str) -> Result<()> {
         }
         }
         terminal::disable_raw_mode();
-
+        word_index.save_index();
     } 
     execute!(stdout, DisableMouseCapture)?;
 
@@ -204,9 +204,9 @@ fn get_input(search_str: &mut String, completion: &String) -> crossterm::Result<
                     return Ok(InputStatus::None);
                 }
             },
-            Event::Mouse(event) => println!("{:?}", event),
+            Event::Mouse(event) => (), //println!("{:?}", event),
 //                #[cfg(feature = "bracketed-paste")]
-            Event::Paste(data) => println!("Pasting: {}", data),
+            Event::Paste(data) => (), //println!("Pasting: {}", data),
             Event::Resize(width, height) => ()
         }
         queue!(stdout, terminal::Clear(terminal::ClearType::FromCursorDown), cursor::MoveLeft(len_compl_suffix)).unwrap();

@@ -6,7 +6,10 @@ use std::{time::{Instant, Duration},
         io::{Write, stdout}};
 use crate::time_aux::saved_duration;
 use crate::type_aux::*;
+use serde::{Deserialize, Serialize};
+use serde_json::Result;
 
+#[derive(Serialize, Deserialize)]
 
 //mod super::levenshtein;
 
@@ -26,6 +29,38 @@ impl WordIndex {
         self.bt.get(search_str)
     }
 
+    pub fn save_index(self) {
+        let start = Instant::now();
+        let wc: Vec<WordCount> = self.bt.iter().map(|(k, v)| WordCount{word: k.clone(), count: v.len()}).collect();
+        let json = serde_json::to_string(&wc).unwrap();
+        let duration = start.elapsed();
+        println!("Time elapsed for computing json of WordCount {:?}\n", duration);
+        let start_save = Instant::now();
+        let filename = "index_wc.json";
+        let mut file = File::create(filename).unwrap();
+
+        // Write a &str in the file (ignoring the result).
+        writeln!(&mut file, "{}", json).unwrap();
+        let duration_save = start_save.elapsed();
+        println!("Time elapsed for saving word-count-Json to file {:?}\n", duration_save);
+
+        let start = Instant::now();   
+        let wl: WordLocations = self.bt.into_iter().map(|(k, v)| WordLocationsEntry{word: k, locations: v}).collect();
+        let json = serde_json::to_string(&wl).unwrap();
+        let duration = start.elapsed();
+        println!("Time elapsed for computing json {:?}\n", duration);
+        let start_save = Instant::now();
+        let filename = "index.json";
+        let mut file = File::create(filename).unwrap();
+
+        // Write a &str in the file (ignoring the result).
+        writeln!(&mut file, "{}", json).unwrap();
+        let duration_save = start_save.elapsed();
+        println!("Time elapsed for saving Json to file {:?}\n", duration_save);
+
+//        println!("{}\r\n\r\n of length {}", &json, &json.len());
+    }
+
     pub fn build_index(reader: BufReader<File>) -> WordIndex {
         let mut word_index = BTreeMap::new();
     
@@ -41,7 +76,7 @@ impl WordIndex {
                                     .unwrap()
     //                                .to_lowercase()
                                     .split_whitespace()
-                                    .map(remove_interpunction)
+                                    .filter_map(remove_interpunction)
                                     .enumerate() {
                 word_count += 1;
                 let w_string = word.to_string();
@@ -109,11 +144,29 @@ pub fn build_indexes_from_file_name(filename: &str, num_btrees: u32) -> Vec<Word
 }
 
 
-
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WordLoc {
     line: u32,
     word: u16  // the size of this struct is 8 bytes anyway due to alignment, so this could also be a u32
+}
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WordLocationsEntry {
+    pub word: String,
+    pub locations: Vec<WordLoc>
+}
+
+
+//#[derive(Debug, Serialize, Deserialize)]
+type WordLocations = Vec<WordLocationsEntry>;
+
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WordCount {
+    pub word: String,
+    pub count: usize
 }
 
 #[derive(Debug)]
@@ -169,20 +222,34 @@ fn top_completions(mut state: CompletionsRec, kv: (&String, &Vec<WordLoc>)) -> C
 
 
 
-fn remove_interpunction(s: &str) -> String {
-    // for a word remove heading and trailing interpunction
+fn remove_interpunction(s: &str) -> Option<String> {
+    // for a word remove heading and trailing interpunction. To be used with filter_map to drop empty strings.
     let chs: Vec<char> = s.chars().collect();
     
-    let mut start_idx = if chs[0] == '"' || chs[0] == '\u{27}' || chs[0] == '[' || chs[0] == '(' || chs[0] == '{' {1} else {0};
-    let end_idx = match chs[chs.len()-1] {
-        ';' | '.' | ',' | '"' | '\u{27}' | '?' | '!' | ')' | ']' | '}'=> chs.len() - 1,
-        _ => chs.len()
+    // let mut start_idx = if chs[0] == '"' || chs[0] == '\u{27}' || chs[0] == '[' || chs[0] == '(' || chs[0] == '{' {1} else {0};
+    // let end_idx = match chs[chs.len()-1] {
+    //     ';' | '.' | ',' | '"' | '\u{27}' | '?' | '!' | ')' | ']' | '}'=> chs.len() - 1,
+    //     _ => chs.len()
+    // };
+    let mut start_idx = 0;
+    
+    while start_idx < chs.len() &&
+      (chs[start_idx] == '"' || chs[start_idx] == '\u{27}' || chs[start_idx] == '[' || chs[start_idx] == '(' || chs[start_idx] == '{') {
+        start_idx += 1;
+      };
+
+    let mut end_idx = chs.len()-1;
+    while end_idx > 0 && 
+      (chs[end_idx] == ';' || chs[end_idx] == '.' || chs[end_idx] == ',' || chs[end_idx] == '"' || chs[end_idx] == '\u{27}' 
+       || chs[end_idx] == '?' || chs[end_idx] == '!' || chs[end_idx] == ')' || chs[end_idx] == ']' || chs[end_idx] == '}') {
+       end_idx -= 1;
     };
+    end_idx += 1;
 
     if start_idx >= end_idx {
-        String::default()
+        None
     } else {
-        chs[start_idx..end_idx].iter().collect::<String>()
+        Some(chs[start_idx..end_idx].iter().collect::<String>())
     }
 }
 
