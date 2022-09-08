@@ -9,6 +9,11 @@ use crate::type_aux::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
 
+// for the gz-encryption
+use std::io::BufWriter;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+
 #[derive(Serialize, Deserialize)]
 
 //mod super::levenshtein;
@@ -18,6 +23,33 @@ pub struct WordIndex {
     pub duration: Duration,
     pub record_count: usize,
     pub word_count: usize
+}
+
+
+fn write_to_file(filename: &str, data: &str) {
+    let start = Instant::now();
+    let mut file = File::create(filename).unwrap();
+
+    // Write a &str in the file (ignoring the result).
+    writeln!(&mut file, "{}", data).unwrap();
+
+    let duration = start.elapsed();
+    println!("Time elapsed to write {}: {:?}\n", filename, duration);
+
+}
+
+
+fn write_to_gz_file(filename: &str, data: &str) {
+    let start = Instant::now();
+    //let mut file = BufWriter::new(File::create(filename).unwrap());
+    let mut file = File::create(filename).unwrap();
+
+    let mut encoder = GzEncoder::new(file, Compression::default());
+    let res = encoder.write_all(data.as_bytes());
+    
+    let duration = start.elapsed();
+    println!("Time elapsed to write {}: {:?} with results {:?}\n", filename, duration, res);
+
 }
 
 impl WordIndex {
@@ -35,30 +67,44 @@ impl WordIndex {
         let json = serde_json::to_string(&wc).unwrap();
         let duration = start.elapsed();
         println!("Time elapsed for computing json of WordCount {:?}\n", duration);
-        let start_save = Instant::now();
-        let filename = "index_wc.json";
-        let mut file = File::create(filename).unwrap();
 
-        // Write a &str in the file (ignoring the result).
-        writeln!(&mut file, "{}", json).unwrap();
-        let duration_save = start_save.elapsed();
-        println!("Time elapsed for saving word-count-Json to file {:?}\n", duration_save);
+        let filename = "index_wc.json";
+        write_to_file(filename, &json);
+        write_to_gz_file(&(filename.to_owned()+".gz"), &json);
+
+        // now as tuples with word-count only
+        let start = Instant::now();
+        let wc: Vec<_> = self.bt.iter().map(|(k, v)| (k.clone(), v.len())).collect();
+        let json = serde_json::to_string(&wc).unwrap();
+        let duration = start.elapsed();
+        println!("Time elapsed for computing json of WordCount {:?}\n", duration);
+
+        let filename = "index_wc_tuple.json";
+        write_to_file(filename, &json);
+        write_to_gz_file(&(filename.to_owned()+".gz"), &json);
+
+
+        // now as tuples with full index
+        let start = Instant::now();
+        let wc: Vec<_> = self.bt.iter().map(|(k, v)| (k.clone(), v.iter().map(|wl| WordLocTuple(wl.line, wl.word)).collect::<Vec<WordLocTuple>>())).collect();
+        let json = serde_json::to_string(&wc).unwrap();
+        let duration = start.elapsed();
+        println!("Time elapsed for computing json of WordCount {:?}\n", duration);
+
+        let filename = "index_tuple.json";
+        write_to_file(filename, &json);
+        write_to_gz_file(&(filename.to_owned()+".gz"), &json);
 
         let start = Instant::now();   
         let wl: WordLocations = self.bt.into_iter().map(|(k, v)| WordLocationsEntry{word: k, locations: v}).collect();
         let json = serde_json::to_string(&wl).unwrap();
         let duration = start.elapsed();
         println!("Time elapsed for computing json {:?}\n", duration);
-        let start_save = Instant::now();
+
         let filename = "index.json";
-        let mut file = File::create(filename).unwrap();
+        write_to_file(filename, &json);
+        write_to_gz_file(&(filename.to_owned()+".gz"), &json);
 
-        // Write a &str in the file (ignoring the result).
-        writeln!(&mut file, "{}", json).unwrap();
-        let duration_save = start_save.elapsed();
-        println!("Time elapsed for saving Json to file {:?}\n", duration_save);
-
-//        println!("{}\r\n\r\n of length {}", &json, &json.len());
     }
 
     pub fn build_index(reader: BufReader<File>) -> WordIndex {
@@ -149,6 +195,13 @@ pub struct WordLoc {
     line: u32,
     word: u16  // the size of this struct is 8 bytes anyway due to alignment, so this could also be a u32
 }
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WordLocTuple (
+    u32,
+    u16  // the size of this struct is 8 bytes anyway due to alignment, so this could also be a u32
+);
 
 
 #[derive(Debug, Serialize, Deserialize)]
